@@ -25,7 +25,13 @@ async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail ?? detail; } catch { /* not json */ }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    if (typeof detail === "string") throw new Error(detail);
+    const d = detail as { message?: string; rejected?: RejectedImage[] };
+    if (d && d.message) {
+      const reasons = (d.rejected ?? []).map(r => `image ${r.index + 1}: ${r.reason}`).join("; ");
+      throw new Error(reasons ? `${d.message} (${reasons})` : d.message);
+    }
+    throw new Error(JSON.stringify(detail));
   }
   return res.status === 204 ? (undefined as T) : res.json();
 }

@@ -1,0 +1,40 @@
+<!doctype html><meta charset=utf-8><title>inference_test.py</title>
+<style>body{margin:0;background:#1e1f24;padding:24px;font:13px/1.45 Menlo,monospace;color:#d8dee9}
+.bar{color:#8b93a6;margin-bottom:10px} .ok{color:#7ec27e} .bad{color:#e06c6c;font-weight:bold} pre{margin:0}</style>
+<div class=bar>~/Developer/faceguard/backend $ uv run python ../scripts/inference_test.py -n 6</div><pre>==============================================================================
+                           FaceGuard inference test                           
+==============================================================================
+Verifier : InsightFace buffalo_l ArcFace (ResNet50, 512-d)
+           device=cpu (ONNX Runtime), load 1.9s
+Detector : prithivMLmods/Deep-Fake-Detector-v2-Model
+           device=mps (PyTorch), load 3.9s
+           id2label={0: &#x27;Realism&#x27;, 1: &#x27;Deepfake&#x27;}  fake_index=1
+Thresholds: T_SIM=0.35  T_FAKE=0.5
+------------------------------------------------------------------------------
+(a) Verification - ArcFace cosine similarity [LFW]
+------------------------------------------------------------------------------
+Image A                  Image B                  Truth   Cosine  Result    
+George_W_Bush/1          George_W_Bush/2          same     0.818  MATCH     <span class=ok>ok</span>
+Colin_Powell/1           Colin_Powell/2           same     0.740  MATCH     <span class=ok>ok</span>
+George_W_Bush/1          Tony_Blair/1             diff     0.033  no-match  <span class=ok>ok</span>
+Colin_Powell/1           Donald_Rumsfeld/1        diff    -0.066  no-match  <span class=ok>ok</span>
+------------------------------------------------------------------------------
+(b) Fake detection - P(fake) from prithivMLmods/Deep-Fake-Detector-v2-Model
+------------------------------------------------------------------------------
+Truth  File                                P(fake)  Predicted    Crop 
+real   wiki_00_69300_1950-05-11_2009.jpg     0.134  Realism      face  <span class=ok>ok</span>
+real   wiki_01_11559201_1983-02-08_2012.~    0.236  Realism      face  <span class=ok>ok</span>
+real   wiki_01_19288501_1983-08-30_2009.~    0.686  Deepfake     face  <span class=bad>WRONG</span>
+real   wiki_01_5374401_1893-06-26_1977.j~    0.262  Realism      face  <span class=ok>ok</span>
+real   wiki_01_9620401_1975-05-02_2004.j~    0.547  Deepfake     full  <span class=bad>WRONG</span>
+real   wiki_02_11882702_1982-09-01_2005.~    0.106  Realism      face  <span class=ok>ok</span>
+fake   inpainting_00_32285300_1986-10-17~    0.134  Realism      face  <span class=bad>WRONG</span>
+fake   insight_01_9086701_1986-05-03_200~    0.692  Deepfake     face  <span class=ok>ok</span>
+fake   text2img_00_1285200_1975-01-05_20~    0.179  Realism      face  <span class=bad>WRONG</span>
+fake   inpainting_02_1669102_1965-02-22_~    0.322  Realism      face  <span class=bad>WRONG</span>
+fake   insight_02_14314702_1903-02-20_19~    0.758  Deepfake     face  <span class=ok>ok</span>
+fake   text2img_01_658701_1712-06-14_196~    0.174  Realism      face  <span class=bad>WRONG</span>
+------------------------------------------------------------------------------
+mean P(fake|real)=0.329  mean P(fake|fake)=0.376
+==============================================================================
+</pre>
