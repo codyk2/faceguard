@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FaceGuard — Milestone 1: Setup and Model Selection</title>
+<style>
+  @page { size: Letter; margin: 0.8in 0.85in; }
+  body { font: 10.5pt/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #1d1f24; margin: 0; }
+  h1 { font-size: 20pt; margin: 0 0 2pt; letter-spacing: -0.01em; }
+  .sub { color: #5b6170; margin: 0 0 14pt; }
+  h2 { font-size: 13pt; margin: 18pt 0 6pt; padding-bottom: 3pt; border-bottom: 1.5px solid #d9dce3; }
+  h2 .pts { float: right; font-weight: 500; color: #5b6170; font-size: 10pt; }
+  h3 { font-size: 11pt; margin: 12pt 0 4pt; }
+  p { margin: 0 0 7pt; text-align: justify; }
+  table { border-collapse: collapse; width: 100%; margin: 4pt 0 10pt; font-size: 9.5pt; }
+  th, td { border: 1px solid #d9dce3; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+  th { background: #f2f4f7; font-weight: 600; }
+  code { font: 9pt Menlo, monospace; background: #f2f4f7; padding: 0 2pt; border-radius: 2pt; }
+  pre { font: 8.5pt/1.4 Menlo, monospace; background: #f6f7f9; border: 1px solid #e3e5ea; padding: 7pt 9pt; white-space: pre-wrap; margin: 4pt 0 10pt; }
+  figure { margin: 8pt 0 12pt; page-break-inside: avoid; }
+  figure img { width: 100%; border: 1px solid #d9dce3; }
+  figcaption { font-size: 9pt; color: #5b6170; margin-top: 3pt; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
+  .callout { background: #f6f7f9; border-left: 3px solid #4a6cf7; padding: 6pt 10pt; margin: 6pt 0 10pt; }
+  .pb { page-break-before: always; }
+  ol.refs { padding-left: 16pt; font-size: 9.5pt; } ol.refs li { margin-bottom: 3pt; }
+</style>
+</head>
+<body>
+
+<h1>FaceGuard: Milestone 1, Setup and Model Selection</h1>
+<p class="sub">Cody Kandarian · Due November 22, 2026 · Repository: <code>github.com/codyk2/faceguard</code></p>
+
+<p>FaceGuard is a face verification system with deepfake screening. A user claims an enrolled identity and submits a face photo. The system accepts only if the photo is judged <b>real</b> by a deepfake detector <b>and</b> its face embedding <b>matches</b> the enrolled template. Otherwise it returns <code>REJECT_FAKE</code>, <code>REJECT_MISMATCH</code> or <code>NO_FACE</code>.</p>
+
+<h2>1. Modality</h2>
+<p><b>Face.</b> Enrollment and probe data are public celebrity photos from Labeled Faces in the Wild (LFW); fake samples come from the public DeepFakeFace benchmark. No photos of people outside these public datasets are collected, so no consent forms are required.</p>
+
+<h2>2. Selected models <span class="pts">5 pts</span></h2>
+<table>
+  <tr><th style="width:22%">Role</th><th style="width:36%">Model</th><th>Details</th></tr>
+  <tr><td>Face detection + alignment</td><td>SCRFD-10GF (InsightFace <code>buffalo_l</code>) [2]</td><td>Returns face boxes and 5 landmarks; landmarks drive a similarity transform to a 112×112 aligned crop.</td></tr>
+  <tr><td><b>Verification</b></td><td>ArcFace, ResNet-50 backbone (InsightFace <code>buffalo_l</code>) [1]</td><td>512-d L2-normalised embedding; cosine similarity against the mean of 3–5 enrolled embeddings. Runs on ONNX Runtime (CPU).</td></tr>
+  <tr><td><b>Deepfake detection</b></td><td>ViT-B/16 deepfake classifier <code>prithivMLmods/Deep-Fake-Detector-v2-Model</code> [3, 4]</td><td>Fine-tuned from <code>google/vit-base-patch16-224-in21k</code>; labels <code>{0: Realism, 1: Deepfake}</code>. Runs on PyTorch (Apple MPS). Fallback evaluated: <code>dima806/deepfake_vs_real_image_detection</code> [5].</td></tr>
+</table>
+
+<h3>How the detection model works</h3>
+<p>The detector is a Vision Transformer (ViT-Base/16) pretrained on ImageNet-21k and fine-tuned as a binary real-versus-fake face classifier. FaceGuard crops the detected face with a 30% margin (so the blending boundary between face and background stays in view) and resizes it to 224×224. The ViT cuts this crop into 196 non-overlapping 16×16 patches, linearly projects each patch to a 768-dimensional token, adds a learned position embedding, and prepends a learned classification token. Twelve transformer encoder layers then apply multi-head self-attention, so every patch can attend to every other patch in the face.</p>
+<p>That global attention suits the task. Face swaps and generated faces tend to carry inconsistencies that span regions, such as blending seams at the face boundary, texture or lighting that differs between the face and its surroundings, and unnatural high-frequency detail. A CNN sees these only through gradually growing receptive fields. The final state of the classification token goes through a linear head and softmax, giving P(fake). FaceGuard reads which output index means “fake” from the model's <code>id2label</code> configuration rather than hard-coding it, and rejects the probe when P(fake) ≥ T<sub>FAKE</sub> (0.5 by default). A known limitation of such classifiers is weak generalisation to generation methods absent from their fine-tuning data, so we measure the detector on our own benchmark rather than relying on its model card (Section 3).</p>
+
+<h2>3. Inference tests <span class="pts">5 pts</span></h2>
+<p>Both models were run on real data with <code>scripts/inference_test.py</code>. Verification uses LFW image pairs; detection uses real and fake images from DeepFakeFace [7], with the fakes spread across its three generation methods (Stable Diffusion inpainting, InsightFace face swap, Stable Diffusion text-to-image).</p>
+<figure style="width:78%;margin-left:auto;margin-right:auto">
+  <img src="screenshots/inference_test.jpg" alt="Inference test terminal output">
+  <figcaption>Figure 1. <code>inference_test.py</code>: both models loaded (ArcFace on CPU via ONNX Runtime, ViT on Apple MPS); four verification pairs all correct; twelve detection samples.</figcaption>
+</figure>
+
+<p><b>Verification works as expected:</b> same-person pairs score 0.74–0.82 and different-person pairs score about 0, far apart on either side of T<sub>SIM</sub> = 0.35. <b>Detection is the weak link:</b> the ViT catches the face swaps (P(fake) 0.69 and 0.76) but scores the diffusion inpainting and text-to-image fakes as real, and flags two of six real photos as fake.</p>
+
+<h3>End-to-end through the web interface</h3>
+<p>The same models serve the FastAPI backend behind the React interface. Ten LFW celebrities were enrolled; Figure 2 shows a held-out photo of an enrolled identity, an impostor, and a face-swap fake, each verified against the claimed identity “George W Bush”.</p>
+<div class="grid2">
+  <figure><img src="screenshots/card_accept.png" alt="Accepted"><figcaption>Figure 2a. Genuine held-out photo: <b>ACCEPT</b>, cosine 0.780, P(fake) 19.9%. The main face is chosen over the partly visible person at the edge.</figcaption></figure>
+  <figure><img src="screenshots/card_mismatch.png" alt="Mismatch"><figcaption>Figure 2b. Impostor (Tony Blair): <b>REJECT_MISMATCH</b>, cosine 0.048.</figcaption></figure>
+  <figure><img src="screenshots/card_fake.png" alt="Fake"><figcaption>Figure 2c. Face-swap fake (DeepFakeFace): <b>REJECT_FAKE</b>, P(fake) 69.2%.</figcaption></figure>
+  <div class="callout" style="align-self:start;font-size:9.5pt">Seeding the ten identities also exposed the detector's false-positive rate on real photos: 18 of the 40 genuine LFW enrollment images were flagged as fake (P(fake) 0.52–0.82) and excluded, so most identities enrolled with 1–3 images instead of 4.</div>
+</div>
+
+<h3 style="break-before: page; margin-top:0">Benchmark evaluation (<code>scripts/evaluate.py</code>)</h3>
+<p>Beyond the spot checks, both models were evaluated on full benchmarks: verification on the 6,000 standard LFW <code>pairs.txt</code> pairs (3,000 genuine, 3,000 impostor), and detection on all 600 DeepFakeFace images, comparing both candidate detectors.</p>
+<div class="grid2">
+<table>
+  <tr><th colspan="2">Verification (ArcFace, LFW 6,000 pairs)</th></tr>
+  <tr><td>ROC AUC</td><td>0.9956</td></tr>
+  <tr><td>Equal error rate</td><td>0.63% (at cosine 0.151)</td></tr>
+  <tr><td>FAR / FRR at T<sub>SIM</sub> = 0.35</td><td>0.00% / 1.07%</td></tr>
+  <tr><td>Accuracy at T<sub>SIM</sub></td><td>99.47%</td></tr>
+  <tr><td>Mean cosine, genuine / impostor</td><td>0.666 / 0.002</td></tr>
+</table>
+<table>
+  <tr><th>Detection at T<sub>FAKE</sub> = 0.5</th><th>prithivMLmods</th><th>dima806</th></tr>
+  <tr><td>Accuracy</td><td>0.512</td><td>0.535</td></tr>
+  <tr><td>Precision / recall</td><td>0.55 / 0.41</td><td>0.54 / 0.84</td></tr>
+  <tr><td>ROC AUC</td><td>0.543</td><td>0.502</td></tr>
+  <tr><td>Real photos flagged fake</td><td>37%</td><td>80%</td></tr>
+  <tr><td>Fakes caught: inpaint / swap / text2img</td><td>46 / 41 / 35%</td><td>82 / 78 / 92%</td></tr>
+</table>
+</div>
+<p style="font-size:9pt;color:#5b6170;margin-top:-4pt">Detection was scored on the 469 of 600 images with a usable face (131 group or small-face photos have faces under 60 px and are rejected as low quality). The face-selection fix in Section 4 cut verification FRR from 6.17% to 1.07% and EER from 5.07% to 0.63%.</p>
+<div class="grid2">
+  <figure><img src="figures/roc_detection.png" alt="Detection ROC"><figcaption>Figure 3. Detection ROC on DeepFakeFace: both detectors sit on the chance diagonal.</figcaption></figure>
+  <div class="callout" style="align-self:center">
+    <p><b>Takeaway.</b> Verification is strong: at the default threshold it accepted no impostor pairs and rejected about 1 in 100 genuine pairs.</p>
+    <p style="margin:0">Off-the-shelf deepfake detection does <b>not</b> transfer to this benchmark. The primary model's AUC of 0.54 is near chance; the fallback flags 80% of everything as fake, real photos included. This confirms the generalisation risk from Section 2. The next milestone will fine-tune the ViT on a held-out training split of DeepFakeFace and recalibrate T<sub>FAKE</sub>, keeping a disjoint test split.</p>
+  </div>
+</div>
+
+<h2 class="pb">4. Repository, environment and labor division <span class="pts">5 pts</span></h2>
+<p><b>Repository:</b> <code>https://github.com/codyk2/faceguard</code> (private; access by collaborator invite). One command sets up each half: <code>make setup</code> runs <code>uv sync</code> (Python 3.11) and <code>npm install</code>; <code>make data</code>, <code>make inference-test</code>, <code>make dev</code> and <code>make test</code> cover the rest.</p>
+<table>
+  <tr><th style="width:30%">Path</th><th>Contents</th></tr>
+  <tr><td><code>backend/app/ml/</code></td><td>Preprocessing (decode, SCRFD detect, main-face selection, alignment, margin crop), ArcFace verifier, ViT detector, decision pipeline</td></tr>
+  <tr><td><code>backend/app/</code></td><td>FastAPI app: <code>/enroll</code>, <code>/verify</code>, <code>/detect</code>, <code>/identities</code>, <code>/health</code>; SQLite store of per-image embeddings</td></tr>
+  <tr><td><code>frontend/</code></td><td>React + TypeScript (Vite): Enroll, Verify and Identities pages; webcam capture or upload</td></tr>
+  <tr><td><code>scripts/</code></td><td>Dataset download, inference test, seed enrollment, evaluation</td></tr>
+  <tr><td><code>backend/tests/</code></td><td>39 tests (decision logic, API flows, real-model smoke tests); all passing</td></tr>
+</table>
+
+<h3>Environment and dependency issues resolved</h3>
+<table>
+  <tr><th style="width:38%">Problem</th><th>Fix</th></tr>
+  <tr><td>Project on an iCloud-synced Desktop corrupts virtualenvs</td><td>Moved the project to <code>~/Developer</code></td></tr>
+  <tr><td><code>insightface</code> 0.7.3 ships only as source and compiles a Cython extension</td><td>Xcode Command Line Tools; Python 3.11 for arm64 wheel coverage of <code>onnxruntime</code> and <code>torch</code></td></tr>
+  <tr><td>InsightFace incompatible with NumPy 2</td><td>Pinned <code>numpy&lt;2.0</code></td></tr>
+  <tr><td>SSL certificate errors (uv's standalone Python has no system CA store) in albumentations' update check and dataset downloads</td><td><code>NO_ALBUMENTATIONS_UPDATE=1</code>; <code>certifi</code> SSL context for downloads</td></tr>
+  <tr><td>The two detector models use different label names and orders</td><td>P(fake) index resolved from <code>model.config.id2label</code></td></tr>
+  <tr><td>Largest-box face selection picked half-visible neighbours on LFW crops (boxes extend past the image edge)</td><td>Rank faces by image-clipped area weighted toward the centre</td></tr>
+</table>
+
+<h3>Labor division</h3>
+<p>This is a solo project. Cody Kandarian is responsible for all parts: modality and model selection, environment setup, face preprocessing, verification and detection integration, the FastAPI backend, the React interface, data collection and evaluation, and the report.</p>
+
+<h2>References</h2>
+<ol class="refs">
+  <li>J. Deng, J. Guo, N. Xue, S. Zafeiriou. ArcFace: Additive Angular Margin Loss for Deep Face Recognition. <i>CVPR</i>, 2019.</li>
+  <li>J. Guo, J. Deng, A. Lattas, S. Zafeiriou. Sample and Computation Redistribution for Efficient Face Detection. <i>ICLR</i>, 2022.</li>
+  <li>A. Dosovitskiy et al. An Image Is Worth 16x16 Words: Transformers for Image Recognition at Scale. <i>ICLR</i>, 2021.</li>
+  <li>prithivMLmods. Deep-Fake-Detector-v2-Model. Hugging Face, https://huggingface.co/prithivMLmods/Deep-Fake-Detector-v2-Model (accessed Nov 21, 2026).</li>
+  <li>dima806. deepfake_vs_real_image_detection. Hugging Face, https://huggingface.co/dima806/deepfake_vs_real_image_detection (accessed Nov 21, 2026).</li>
+  <li>G. B. Huang, M. Ramesh, T. Berg, E. Learned-Miller. Labeled Faces in the Wild: A Database for Studying Face Recognition in Unconstrained Environments. UMass Amherst Tech. Rep. 07-49, 2007.</li>
+  <li>H. Song, S. Huang, Y. Dong, W.-W. Tu. Robustness and Generalizability of Deepfake Detection: A Study with Diffusion Models. arXiv:2309.02218, 2023.</li>
+</ol>
+
+</body>
+</html>
