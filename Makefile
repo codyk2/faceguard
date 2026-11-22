@@ -1,4 +1,4 @@
-.PHONY: setup backend frontend dev test test-models inference-test data seed evaluate
+.PHONY: setup backend frontend dev test test-models inference-test data seed evaluate train-detector
 
 setup:
 	cd backend && uv sync
@@ -30,3 +30,10 @@ seed:
 
 evaluate:
 	cd backend && uv run python ../scripts/evaluate.py
+
+# Fine-tune the fake detector on DeepFakeFace (~25 min on Apple Silicon; needs `make data` first)
+train-detector:
+	cd backend && uv run python ../scripts/download_train.py --pairs 1500
+	cd backend && uv run python ../scripts/train_detector.py crops
+	cd backend && uv run python ../scripts/train_detector.py train --epochs 4 --degrade strong --out detector-dff-ft-lowres
+	cd backend && uv run python ../scripts/train_detector.py eval

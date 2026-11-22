@@ -52,7 +52,11 @@ class ViTFakeDetector:
         self.model = model.to(self.device).eval()
         self.id2label = {int(k): str(v) for k, v in self.model.config.id2label.items()}
         self.fake_index = find_fake_index(self.id2label)
-        self.name = f"{self.model_id} (ViT-B/16)"
+        from pathlib import Path
+
+        local = Path(self.model_id)
+        self.name = (f"ViT-B/16 fine-tuned on DeepFakeFace ({local.name})" if local.is_dir()
+                     else f"{self.model_id} (ViT-B/16)")
 
     @torch.inference_mode()
     def predict(self, image: Image.Image) -> tuple[float, str]:

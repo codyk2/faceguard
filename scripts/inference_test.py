@@ -126,7 +126,7 @@ def main() -> None:
     rule("=")
     print(f"Verifier : {pipe.verifier_name}")
     print(f"           device=cpu (ONNX Runtime), load {t_ver:.1f}s")
-    print(f"Detector : {detector.model_id}")
+    print(f"Detector : {short(detector.name, 66)}")
     print(f"           device={detector.device} (PyTorch), load {t_det:.1f}s")
     print(f"           id2label={detector.id2label}  fake_index={detector.fake_index}")
     print(f"Thresholds: T_SIM={settings.t_sim}  T_FAKE={settings.t_fake}")
@@ -155,7 +155,7 @@ def main() -> None:
 
     # (b) detection
     rule()
-    print(f"(b) Fake detection - P(fake) from {short(detector.model_id, 50)}")
+    print(f"(b) Fake detection - P(fake), predicted fake if >= T_FAKE={settings.t_fake}")
     rule()
     fakes = DATA_DIR / "fakes"
     real_imgs = images_in(fakes / "real")[: args.n]
@@ -182,15 +182,16 @@ def main() -> None:
         crop = "face"
         try:
             fa = pipe.analyze(data)
-            p, label = fa.fake_probability, fa.fake_label
+            p = fa.fake_probability
         except NoFaceError:
             from PIL import Image
             img = cv2.cvtColor(decode_image(data), cv2.COLOR_BGR2RGB)
-            p, label = detector.predict(Image.fromarray(img))
+            p, _ = detector.predict(Image.fromarray(img))
             crop = "full"
         per_class[truth].append(p)
-        flag = "ok" if (p >= settings.t_fake) == (truth == "fake") else "WRONG"
-        print(f"{truth:<6} {short(name, 34):<34} {p:>8.3f}  {short(label, 12):<12} {crop:<5} {flag}")
+        pred = "fake" if p >= settings.t_fake else "real"  # same rule as the app's decision
+        flag = "ok" if pred == truth else "WRONG"
+        print(f"{truth:<6} {short(name, 34):<34} {p:>8.3f}  {pred:<12} {crop:<5} {flag}")
     rule()
     means = "  ".join(f"mean P(fake|{k})={np.mean(v):.3f}" for k, v in per_class.items() if v)
     print(means)

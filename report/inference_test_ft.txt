@@ -1,0 +1,36 @@
+==============================================================================
+                           FaceGuard inference test                           
+==============================================================================
+Verifier : InsightFace buffalo_l ArcFace (ResNet50, 512-d)
+           device=cpu (ONNX Runtime), load 1.6s
+Detector : ViT-B/16 fine-tuned on DeepFakeFace (detector-dff-ft-lowres)
+           device=mps (PyTorch), load 3.0s
+           id2label={0: 'Realism', 1: 'Deepfake'}  fake_index=1
+Thresholds: T_SIM=0.35  T_FAKE=0.9
+------------------------------------------------------------------------------
+(a) Verification - ArcFace cosine similarity [LFW]
+------------------------------------------------------------------------------
+Image A                  Image B                  Truth   Cosine  Result    
+George_W_Bush/1          George_W_Bush/2          same     0.818  MATCH     ok
+Colin_Powell/1           Colin_Powell/2           same     0.740  MATCH     ok
+George_W_Bush/1          Tony_Blair/1             diff     0.033  no-match  ok
+Colin_Powell/1           Donald_Rumsfeld/1        diff    -0.066  no-match  ok
+------------------------------------------------------------------------------
+(b) Fake detection - P(fake), predicted fake if >= T_FAKE=0.9
+------------------------------------------------------------------------------
+Truth  File                                P(fake)  Predicted    Crop 
+real   wiki_00_69300_1950-05-11_2009.jpg     0.073  real         face  ok
+real   wiki_01_11559201_1983-02-08_2012.~    0.080  real         face  ok
+real   wiki_01_19288501_1983-08-30_2009.~    0.069  real         face  ok
+real   wiki_01_5374401_1893-06-26_1977.j~    0.901  fake         face  WRONG
+real   wiki_01_9620401_1975-05-02_2004.j~    0.535  real         full  ok
+real   wiki_02_11882702_1982-09-01_2005.~    0.514  real         face  ok
+fake   inpainting_00_32285300_1986-10-17~    0.918  fake         face  ok
+fake   insight_01_9086701_1986-05-03_200~    0.766  real         face  WRONG
+fake   text2img_00_1285200_1975-01-05_20~    0.927  fake         face  ok
+fake   inpainting_02_1669102_1965-02-22_~    0.895  real         face  WRONG
+fake   insight_02_14314702_1903-02-20_19~    0.924  fake         face  ok
+fake   text2img_01_658701_1712-06-14_196~    0.937  fake         face  ok
+------------------------------------------------------------------------------
+mean P(fake|real)=0.362  mean P(fake|fake)=0.894
+==============================================================================

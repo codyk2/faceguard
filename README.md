@@ -6,7 +6,7 @@ Face verification with deepfake screening. A person claims an enrolled identity 
 |---|---|
 | Face detection + alignment | SCRFD-10GF (InsightFace `buffalo_l`) |
 | Verification | ArcFace ResNet50, 512-d embeddings, cosine similarity (InsightFace `buffalo_l`) |
-| Fake detection | ViT-B/16 deepfake classifier [`prithivMLmods/Deep-Fake-Detector-v2-Model`](https://huggingface.co/prithivMLmods/Deep-Fake-Detector-v2-Model) (fallback: [`dima806/deepfake_vs_real_image_detection`](https://huggingface.co/dima806/deepfake_vs_real_image_detection)) |
+| Fake detection | ViT-B/16 fine-tuned on DeepFakeFace from [`prithivMLmods/Deep-Fake-Detector-v2-Model`](https://huggingface.co/prithivMLmods/Deep-Fake-Detector-v2-Model) (see [Fine-tuned detector](#fine-tuned-detector); without it the app falls back to the base model) |
 | Backend | FastAPI, SQLite |
 | Frontend | React + TypeScript + Vite |
 
@@ -46,6 +46,30 @@ Thresholds are set in `backend/app/config.py` or with env vars `FACEGUARD_T_SIM`
 - **DeepFakeFace (DFF)** — Song et al., arXiv:2309.02218, 2023. [OpenRL/DeepFakeFace](https://huggingface.co/datasets/OpenRL/DeepFakeFace). 300 real (IMDB-WIKI) and 300 fake (100 SD inpainting, 100 InsightFace face swap, 100 SD v1.5 text-to-image), seed 1234. See `data/fakes/SOURCE.md` after download.
 
 No group-member photos are collected, so no consent forms are needed.
+
+## Fine-tuned detector
+
+The off-the-shelf detectors score near chance on DeepFakeFace (AUC 0.54 and 0.50), so the ViT is fine-tuned:
+
+```bash
+make train-detector   # download training pairs, crop faces, train 4 epochs, evaluate (~25 min)
+```
+
+- **Data:** 1,500 DeepFakeFace source photos, each giving a real image plus one fake (rotating inpainting / face swap / text-to-image). No source photo of the 600-image evaluation set is used (asserted in `scripts/download_train.py`). 90/10 train/validation split by source photo.
+- **Inputs:** face crops from the app's own `FacePreprocessor`, so training sees exactly what inference sees.
+- **Shortcut control:** DeepFakeFace's inpainting and face-swap fakes were stretched to 512×512, so their faces are 12–30% wider than in the source photo. Crop shape alone gives AUC 0.68. Training applies random aspect stretch, resolution loss and JPEG re-compression to **both** classes.
+- **Recipe:** AdamW, lr 2e-5, batch 32, 4 epochs, cosine schedule, label smoothing 0.05; best epoch by validation AUC. Output in `data/models/detector-dff-ft-lowres/` (not in git).
+- **Threshold:** the fine-tuned model still gives LFW's old, low-resolution news photos higher P(fake) than DeepFakeFace reals. `T_FAKE = 0.90` is calibrated on half of a 1,000-image LFW sample (split by person) to about 5% false positives, and checked on the other half.
+
+| Held-out DeepFakeFace test (469 crops) | Base | Fine-tuned |
+|---|---|---|
+| ROC AUC | 0.548 | **0.950** |
+| Fakes caught (at about 5% real false positives) | 8% | **52%** |
+| LFW real photos flagged at the app threshold | — | 4.8% |
+
+End to end through the live API (T_SIM 0.35, T_FAKE 0.90): genuine users 95% ACCEPT, impostors 100% rejected, and DeepFakeFace fakes 47% REJECT_FAKE, 35% REJECT_MISMATCH, 18% NO_FACE. All 40 seed enrollment photos are accepted (22 of 40 with the base detector).
+
+**Limits:** results are in-domain (same generators as training). Deepfakes *of an enrolled person* weren't tested. Choosing `FACEGUARD_T_FAKE=0.87` catches 63% of fakes at about 10% false positives on LFW.
 
 ## Dependency notes
 
