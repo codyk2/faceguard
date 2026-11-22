@@ -21,8 +21,11 @@
   figure img { width: 100%; border: 1px solid #d9dce3; }
   figcaption { font-size: 9pt; color: #5b6170; margin-top: 3pt; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; }
-  .callout { background: #f6f7f9; border-left: 3px solid #4a6cf7; padding: 6pt 10pt; margin: 6pt 0 10pt; }
+  .callout { page-break-inside: avoid; background: #f6f7f9; border-left: 3px solid #4a6cf7; padding: 6pt 10pt; margin: 6pt 0 10pt; }
   .pb { page-break-before: always; }
+  .ft p { font-size: 10pt; line-height: 1.42; margin-bottom: 5pt; }
+  .ft table { font-size: 8.5pt; margin: 2pt 0 6pt; } .ft th, .ft td { padding: 2.5pt 5pt; }
+  .ft .callout { font-size: 9.5pt; padding: 4pt 9pt; margin: 4pt 0 0; } .ft .callout p { font-size: 9.5pt; margin-bottom: 3pt; }
   ol.refs { padding-left: 16pt; font-size: 9.5pt; } ol.refs li { margin-bottom: 3pt; }
 </style>
 </head>
@@ -41,33 +44,39 @@
   <tr><th style="width:22%">Role</th><th style="width:36%">Model</th><th>Details</th></tr>
   <tr><td>Face detection + alignment</td><td>SCRFD-10GF (InsightFace <code>buffalo_l</code>) [2]</td><td>Returns face boxes and 5 landmarks; landmarks drive a similarity transform to a 112×112 aligned crop.</td></tr>
   <tr><td><b>Verification</b></td><td>ArcFace, ResNet-50 backbone (InsightFace <code>buffalo_l</code>) [1]</td><td>512-d L2-normalised embedding; cosine similarity against the mean of 3–5 enrolled embeddings. Runs on ONNX Runtime (CPU).</td></tr>
-  <tr><td><b>Deepfake detection</b></td><td>ViT-B/16 deepfake classifier <code>prithivMLmods/Deep-Fake-Detector-v2-Model</code> [3, 4]</td><td>Fine-tuned from <code>google/vit-base-patch16-224-in21k</code>; labels <code>{0: Realism, 1: Deepfake}</code>. Runs on PyTorch (Apple MPS). Fallback evaluated: <code>dima806/deepfake_vs_real_image_detection</code> [5].</td></tr>
+  <tr><td><b>Deepfake detection</b></td><td>ViT-B/16 deepfake classifier <code>prithivMLmods/Deep-Fake-Detector-v2-Model</code> [3, 4], <b>further fine-tuned by us on DeepFakeFace</b> [7] (Section 3.4)</td><td>Pretrained model is itself fine-tuned from <code>google/vit-base-patch16-224-in21k</code>; labels <code>{0: Realism, 1: Deepfake}</code>. Runs on PyTorch (Apple MPS). Also evaluated: <code>dima806/deepfake_vs_real_image_detection</code> [5].</td></tr>
 </table>
 
 <h3>How the detection model works</h3>
 <p>The detector is a Vision Transformer (ViT-Base/16) pretrained on ImageNet-21k and fine-tuned as a binary real-versus-fake face classifier. FaceGuard crops the detected face with a 30% margin (so the blending boundary between face and background stays in view) and resizes it to 224×224. The ViT cuts this crop into 196 non-overlapping 16×16 patches, linearly projects each patch to a 768-dimensional token, adds a learned position embedding, and prepends a learned classification token. Twelve transformer encoder layers then apply multi-head self-attention, so every patch can attend to every other patch in the face.</p>
-<p>That global attention suits the task. Face swaps and generated faces tend to carry inconsistencies that span regions, such as blending seams at the face boundary, texture or lighting that differs between the face and its surroundings, and unnatural high-frequency detail. A CNN sees these only through gradually growing receptive fields. The final state of the classification token goes through a linear head and softmax, giving P(fake). FaceGuard reads which output index means “fake” from the model's <code>id2label</code> configuration rather than hard-coding it, and rejects the probe when P(fake) ≥ T<sub>FAKE</sub> (0.5 by default). A known limitation of such classifiers is weak generalisation to generation methods absent from their fine-tuning data, so we measure the detector on our own benchmark rather than relying on its model card (Section 3).</p>
+<p>That global attention suits the task. Face swaps and generated faces tend to carry inconsistencies that span regions, such as blending seams at the face boundary, texture or lighting that differs between the face and its surroundings, and unnatural high-frequency detail. A CNN sees these only through gradually growing receptive fields. The final state of the classification token goes through a linear head and softmax, giving P(fake). FaceGuard reads which output index means “fake” from the model's <code>id2label</code> configuration rather than hard-coding it, and rejects the probe when P(fake) ≥ T<sub>FAKE</sub> (0.5 by default). A known limitation of such classifiers is weak generalisation to generation methods absent from their fine-tuning data, so we measure the detector on our own benchmark rather than relying on its model card. The downloaded model scored near chance there, so we fine-tuned all of its weights on a separate DeepFakeFace training split (Section 3.4). The architecture and inference path are unchanged; only the weights and the decision threshold differ.</p>
 
 <h2>3. Inference tests <span class="pts">5 pts</span></h2>
-<p>Both models were run on real data with <code>scripts/inference_test.py</code>. Verification uses LFW image pairs; detection uses real and fake images from DeepFakeFace [7], with the fakes spread across its three generation methods (Stable Diffusion inpainting, InsightFace face swap, Stable Diffusion text-to-image).</p>
-<figure style="width:78%;margin-left:auto;margin-right:auto">
-  <img src="screenshots/inference_test.jpg" alt="Inference test terminal output">
-  <figcaption>Figure 1. <code>inference_test.py</code>: both models loaded (ArcFace on CPU via ONNX Runtime, ViT on Apple MPS); four verification pairs all correct; twelve detection samples.</figcaption>
+<h3>3.1 Inference test script</h3>
+<p>Both models were run on real data with <code>scripts/inference_test.py</code>. Verification uses LFW image pairs; detection uses real and fake images from DeepFakeFace [7], with the fakes spread across its three generation methods (Stable Diffusion inpainting, InsightFace face swap, Stable Diffusion text-to-image). Figure 1 shows the downloaded detector; Figure 2 shows the same test after fine-tuning.</p>
+<figure style="width:60%;margin-left:auto;margin-right:auto">
+  <img src="screenshots/inference_test.jpg" alt="Inference test terminal output, base detector">
+  <figcaption>Figure 1. <code>inference_test.py</code> with the <b>downloaded</b> detector: both models load (ArcFace on CPU via ONNX Runtime, ViT on Apple MPS). Verification is 4/4 correct; detection is 6/12 correct at T<sub>FAKE</sub> = 0.5.</figcaption>
 </figure>
 
-<p><b>Verification works as expected:</b> same-person pairs score 0.74–0.82 and different-person pairs score about 0, far apart on either side of T<sub>SIM</sub> = 0.35. <b>Detection is the weak link:</b> the ViT catches the face swaps (P(fake) 0.69 and 0.76) but scores the diffusion inpainting and text-to-image fakes as real, and flags two of six real photos as fake.</p>
+<p><b>Verification works as expected:</b> same-person pairs score 0.74–0.82 and different-person pairs score about 0, far apart on either side of T<sub>SIM</sub> = 0.35. <b>Detection was the weak link:</b> the downloaded ViT catches the face swaps (P(fake) 0.69 and 0.76) but scores the diffusion inpainting and text-to-image fakes as real, and flags two of six real photos as fake.</p>
 
-<h3>End-to-end through the web interface</h3>
-<p>The same models serve the FastAPI backend behind the React interface. Ten LFW celebrities were enrolled; Figure 2 shows a held-out photo of an enrolled identity, an impostor, and a face-swap fake, each verified against the claimed identity “George W Bush”.</p>
+<figure style="width:60%;margin-left:auto;margin-right:auto">
+  <img src="screenshots/inference_test_ft.jpg" alt="Inference test terminal output, fine-tuned detector">
+  <figcaption>Figure 2. The same test with the <b>fine-tuned</b> detector at its calibrated threshold T<sub>FAKE</sub> = 0.90: detection is 9/12 correct, and mean P(fake) separates to 0.36 (real) vs 0.89 (fake), from 0.33 vs 0.38.</figcaption>
+</figure>
+
+<h3>3.2 End-to-end through the web interface</h3>
+<p>The same models serve the FastAPI backend behind the React interface. Ten LFW celebrities were enrolled with four photos each; Figure 3 shows a held-out photo of an enrolled identity, an impostor, and a face-swap fake, each verified against the claimed identity “George W Bush” using the fine-tuned detector.</p>
 <div class="grid2">
-  <figure><img src="screenshots/card_accept.png" alt="Accepted"><figcaption>Figure 2a. Genuine held-out photo: <b>ACCEPT</b>, cosine 0.780, P(fake) 19.9%. The main face is chosen over the partly visible person at the edge.</figcaption></figure>
-  <figure><img src="screenshots/card_mismatch.png" alt="Mismatch"><figcaption>Figure 2b. Impostor (Tony Blair): <b>REJECT_MISMATCH</b>, cosine 0.048.</figcaption></figure>
-  <figure><img src="screenshots/card_fake.png" alt="Fake"><figcaption>Figure 2c. Face-swap fake (DeepFakeFace): <b>REJECT_FAKE</b>, P(fake) 69.2%.</figcaption></figure>
-  <div class="callout" style="align-self:start;font-size:9.5pt">Seeding the ten identities also exposed the detector's false-positive rate on real photos: 18 of the 40 genuine LFW enrollment images were flagged as fake (P(fake) 0.52–0.82) and excluded, so most identities enrolled with 1–3 images instead of 4.</div>
+  <figure><img src="screenshots/card_accept.png" alt="Accepted"><figcaption>Figure 3a. Genuine held-out photo: <b>ACCEPT</b>, cosine 0.806, P(fake) 11.0%. The main face is chosen over the partly visible person at the edge.</figcaption></figure>
+  <figure><img src="screenshots/card_mismatch.png" alt="Mismatch"><figcaption>Figure 3b. Impostor (Tony Blair): <b>REJECT_MISMATCH</b>, cosine 0.030.</figcaption></figure>
+  <figure><img src="screenshots/card_fake.png" alt="Fake"><figcaption>Figure 3c. Face-swap fake (DeepFakeFace test set): <b>REJECT_FAKE</b>, P(fake) 92.4% ≥ T<sub>FAKE</sub> 90%.</figcaption></figure>
+  <div class="callout" style="align-self:start;font-size:9.5pt">Enrollment also screens every photo for fakes. With the downloaded detector, 18 of the 40 genuine LFW enrollment photos were wrongly flagged as fake (P(fake) 0.52–0.82) and most identities enrolled with only 1–3 photos. With the fine-tuned detector and calibrated threshold, <b>all 40 were accepted</b>.</div>
 </div>
 
-<h3 style="break-before: page; margin-top:0">Benchmark evaluation (<code>scripts/evaluate.py</code>)</h3>
-<p>Beyond the spot checks, both models were evaluated on full benchmarks: verification on the 6,000 standard LFW <code>pairs.txt</code> pairs (3,000 genuine, 3,000 impostor), and detection on all 600 DeepFakeFace images, comparing both candidate detectors.</p>
+<h3 style="break-before: page; margin-top:0">3.3 Benchmark evaluation before fine-tuning (<code>scripts/evaluate.py</code>)</h3>
+<p>Beyond the spot checks, both models were evaluated on full benchmarks: verification on the 6,000 standard LFW <code>pairs.txt</code> pairs (3,000 genuine, 3,000 impostor), and detection on all 600 DeepFakeFace evaluation images, comparing both downloaded detectors.</p>
 <div class="grid2">
 <table>
   <tr><th colspan="2">Verification (ArcFace, LFW 6,000 pairs)</th></tr>
@@ -88,11 +97,40 @@
 </div>
 <p style="font-size:9pt;color:#5b6170;margin-top:-4pt">Detection was scored on the 469 of 600 images with a usable face (131 group or small-face photos have faces under 60 px and are rejected as low quality). The face-selection fix in Section 4 cut verification FRR from 6.17% to 1.07% and EER from 5.07% to 0.63%.</p>
 <div class="grid2">
-  <figure><img src="figures/roc_detection.png" alt="Detection ROC"><figcaption>Figure 3. Detection ROC on DeepFakeFace: both detectors sit on the chance diagonal.</figcaption></figure>
+  <figure><img src="figures/roc_detection.png" alt="Detection ROC"><figcaption>Figure 4. Detection ROC of the two downloaded detectors on DeepFakeFace: both sit on the chance diagonal.</figcaption></figure>
   <div class="callout" style="align-self:center">
     <p><b>Takeaway.</b> Verification is strong: at the default threshold it accepted no impostor pairs and rejected about 1 in 100 genuine pairs.</p>
-    <p style="margin:0">Off-the-shelf deepfake detection does <b>not</b> transfer to this benchmark. The primary model's AUC of 0.54 is near chance; the fallback flags 80% of everything as fake, real photos included. This confirms the generalisation risk from Section 2. The next milestone will fine-tune the ViT on a held-out training split of DeepFakeFace and recalibrate T<sub>FAKE</sub>, keeping a disjoint test split.</p>
+    <p style="margin:0">Off-the-shelf deepfake detection does <b>not</b> transfer to this benchmark. The primary model's AUC of 0.54 is near chance; the alternative flags 80% of everything as fake, real photos included. This confirms the generalisation risk from Section 2 and motivated fine-tuning (Section 3.4).</p>
   </div>
+</div>
+
+<div class="ft" style="break-before: page">
+<h3 style="margin-top:0">3.4 Fine-tuning the detector (<code>scripts/train_detector.py</code>)</h3>
+<p><b>Data and splits.</b> We downloaded a separate training set of 1,500 DeepFakeFace source photos, each contributing its real image and one fake made from it, rotating across the three generators. Pairing the real and fake versions of the same picture pushes the model toward generation artifacts rather than identity or scene content. No source photo of the 600-image evaluation set appears in training; the download script asserts this. Training images were split 90/10 into train and validation by source photo. All inputs are face crops produced by the app's own preprocessing, so the model trains on exactly what it sees at inference.</p>
+<p><b>A shortcut we found and removed.</b> DeepFakeFace's inpainting and face-swap fakes were resized to 512×512 from non-square photos, so their faces are 12–30% wider than in the source. On the evaluation set, crop shape <i>alone</i> separates real from fake with AUC 0.68. During training every crop, real or fake, is randomly stretched or squeezed (0.75–1.35×), downscaled and JPEG re-compressed, so shape, resolution and compression carry no class signal.</p>
+<p><b>Training.</b> All weights of the downloaded ViT were fine-tuned for 4 epochs (AdamW, learning rate 2×10<sup>−5</sup>, batch 32, cosine schedule, label smoothing 0.05), about 7 minutes on an Apple-silicon GPU. The epoch with the best validation AUC was kept (0.957; the downloaded model scored 0.544).</p>
+<p><b>Threshold calibration.</b> Even after fine-tuning, the model gives LFW's older, low-resolution news photos higher P(fake) than DeepFakeFace's real photos, so a 0.5 threshold would flag about 40% of genuine LFW users. We set T<sub>FAKE</sub> using real photos only: a 1,000-image LFW sample was split by person into a calibration half and a check half, and T<sub>FAKE</sub> = 0.90 gives 5% false positives on the calibration half and 4.8% on the check half.</p>
+<div class="grid2">
+<table>
+  <tr><th>DeepFakeFace test (469 crops)</th><th>Downloaded</th><th>Fine-tuned</th></tr>
+  <tr><td>ROC AUC</td><td>0.548</td><td><b>0.950</b></td></tr>
+  <tr><td>Fakes caught at ~5% real FP</td><td>8%</td><td><b>52%</b></td></tr>
+  <tr><td>…inpaint / swap / text2img</td><td>10 / 10 / 3%</td><td>46 / 49 / 62%</td></tr>
+  <tr><td>Fakes caught at ~10% LFW FP (T 0.87)</td><td>—</td><td>63%</td></tr>
+  <tr><td>Crop-shape-only baseline AUC</td><td colspan="2">0.684</td></tr>
+</table>
+<table>
+  <tr><th colspan="2">Live system, fine-tuned (T<sub>SIM</sub> 0.35, T<sub>FAKE</sub> 0.90)</th></tr>
+  <tr><td>Genuine users (150 held-out photos)</td><td>95% ACCEPT, 5% flagged fake</td></tr>
+  <tr><td>Impostors (150)</td><td>100% rejected</td></tr>
+  <tr><td>DeepFakeFace fakes (300)</td><td>47% REJECT_FAKE, 35% REJECT_MISMATCH, 18% NO_FACE</td></tr>
+  <tr><td>Enrollment photos accepted</td><td>40 / 40 (was 22 / 40)</td></tr>
+</table>
+</div>
+<div class="callout">
+  <p><b>Result.</b> Fine-tuning lifts detection AUC from chance (0.55) to 0.95, well above the 0.68 that the stretch shortcut alone could explain. At the false-alarm rate a real deployment can tolerate (about 1 in 20 genuine photos), it catches about half of the fakes, up from 8%.</p>
+  <p style="margin:0"><b>Limits.</b> The test fakes come from the same three generators as the training fakes, so this is in-distribution accuracy; generalisation to new generators is untested. Every test fake shows a different person from the claimed identity, so deepfakes <i>of an enrolled person</i>, the harder attack, are not yet evaluated. Narrowing the LFW-versus-DeepFakeFace gap, so a lower threshold can be used, is the main open problem.</p>
+</div>
 </div>
 
 <h2 class="pb">4. Repository, environment and labor division <span class="pts">5 pts</span></h2>
@@ -102,7 +140,7 @@
   <tr><td><code>backend/app/ml/</code></td><td>Preprocessing (decode, SCRFD detect, main-face selection, alignment, margin crop), ArcFace verifier, ViT detector, decision pipeline</td></tr>
   <tr><td><code>backend/app/</code></td><td>FastAPI app: <code>/enroll</code>, <code>/verify</code>, <code>/detect</code>, <code>/identities</code>, <code>/health</code>; SQLite store of per-image embeddings</td></tr>
   <tr><td><code>frontend/</code></td><td>React + TypeScript (Vite): Enroll, Verify and Identities pages; webcam capture or upload</td></tr>
-  <tr><td><code>scripts/</code></td><td>Dataset download, inference test, seed enrollment, evaluation</td></tr>
+  <tr><td><code>scripts/</code></td><td>Dataset download, inference test, seed enrollment, evaluation, detector fine-tuning (<code>make train-detector</code>)</td></tr>
   <tr><td><code>backend/tests/</code></td><td>39 tests (decision logic, API flows, real-model smoke tests); all passing</td></tr>
 </table>
 
@@ -115,6 +153,8 @@
   <tr><td>SSL certificate errors (uv's standalone Python has no system CA store) in albumentations' update check and dataset downloads</td><td><code>NO_ALBUMENTATIONS_UPDATE=1</code>; <code>certifi</code> SSL context for downloads</td></tr>
   <tr><td>The two detector models use different label names and orders</td><td>P(fake) index resolved from <code>model.config.id2label</code></td></tr>
   <tr><td>Largest-box face selection picked half-visible neighbours on LFW crops (boxes extend past the image edge)</td><td>Rank faces by image-clipped area weighted toward the centre</td></tr>
+  <tr><td>Training-set download stalled when Hugging Face dropped parallel range requests</td><td>Save each pair as it arrives; 4 connections; watchdog restarts and resumes from disk</td></tr>
+  <tr><td>Fine-tuned weights (~340 MB) too large for git</td><td>Rebuilt reproducibly with <code>make train-detector</code>; the app falls back to the downloaded model if absent</td></tr>
 </table>
 
 <h3>Labor division</h3>
