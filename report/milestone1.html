@@ -32,7 +32,7 @@
 <body>
 
 <h1>FaceGuard: Milestone 1, Setup and Model Selection</h1>
-<p class="sub">Cody Kandarian · Due November 22, 2026 · Repository: <code>github.com/codyk2/faceguard</code></p>
+<p class="sub">Cody Kandarian and Raleigh · Due November 22, 2026 · Repository: <code>github.com/codyk2/faceguard</code></p>
 
 <p>FaceGuard is a face verification system with deepfake screening. A user claims an enrolled identity and submits a face photo. The system accepts only if the photo is judged <b>real</b> by a deepfake detector <b>and</b> its face embedding <b>matches</b> the enrolled template. Otherwise it returns <code>REJECT_FAKE</code>, <code>REJECT_MISMATCH</code> or <code>NO_FACE</code>.</p>
 
@@ -158,7 +158,12 @@
 </table>
 
 <h3>Labor division</h3>
-<p>This is a solo project. Cody Kandarian is responsible for all parts: modality and model selection, environment setup, face preprocessing, verification and detection integration, the FastAPI backend, the React interface, data collection and evaluation, and the report.</p>
+<p>Work is split evenly (50/50) between the two group members, each owning one half of the pipeline end to end. The modality and model choices, and end-to-end testing, were done together.</p>
+<table>
+  <tr><th style="width:18%">Member</th><th>Responsibilities</th><th style="width:9%">Share</th></tr>
+  <tr><td><b>Cody Kandarian</b></td><td>Verification model (InsightFace ArcFace) selection and integration; face detection, alignment and main-face selection; FastAPI backend and SQLite storage; environment setup and dependency fixes; LFW data, seed enrollment and verification evaluation (FAR/FRR, ROC); GitHub repository</td><td>50%</td></tr>
+  <tr><td><b>Raleigh</b></td><td>Deepfake detection model selection and integration; DeepFakeFace data, detector fine-tuning and threshold calibration; detection evaluation; React web interface (enroll, verify, identities); inference-test screenshots and this report</td><td>50%</td></tr>
+</table>
 
 <h2>References</h2>
 <ol class="refs">
