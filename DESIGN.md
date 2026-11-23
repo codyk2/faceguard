@@ -152,7 +152,7 @@ That global attention is what suits the task: generated and face-swapped images 
 Resolved on 2026-11-21:
 
 - **Fake samples:** an open real-vs-fake face image dataset from Hugging Face or Kaggle that downloads without a request form. The data agent picks one, checks its license, and records name, URL and citation in the README. Celeb-DF v2 is out of scope for now.
-- **Group:** Cody Kandarian and Raleigh, split 50/50. Cody: verification, preprocessing, backend, environment, LFW evaluation. Raleigh: detection, fine-tuning, frontend, detection evaluation, report.
+- **Group:** Cody Kandarian and Raleigh Tognela, split 50/50. Cody: verification, preprocessing, backend, environment, LFW evaluation. Raleigh: detection, fine-tuning, frontend, detection evaluation, report.
 - **Repo:** `~/Developer/faceguard`, pushed to a private GitHub repo `codyk2/faceguard`. The grader needs a collaborator invite or the repo made public before submission.
 
 Still open:

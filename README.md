@@ -93,7 +93,7 @@ Split 50/50; modality and model choices and end-to-end testing were joint.
 | Member | Responsibilities |
 |---|---|
 | Cody Kandarian | Verification (ArcFace) integration; face detection, alignment and main-face selection; FastAPI backend and SQLite storage; environment and dependency fixes; LFW data, seed enrollment and verification evaluation; GitHub repository |
-| Raleigh | Deepfake detector selection and integration; DeepFakeFace data, detector fine-tuning and threshold calibration; detection evaluation; React web interface; inference-test screenshots and report |
+| Raleigh Tognela | Deepfake detector selection and integration; DeepFakeFace data, detector fine-tuning and threshold calibration; detection evaluation; React web interface; inference-test screenshots and report |
 
 ## Citations
 
